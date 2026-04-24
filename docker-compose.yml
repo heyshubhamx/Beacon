@@ -1,0 +1,48 @@
+services:
+  # Beacon 2.0 – Node Engine + React UI
+  push-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3010:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Queue Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+
+  # Local Postgres Database (The Supabase Replacement)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-push_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-beacon}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+
+  # BullMQ Message Broker
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
