@@ -17,6 +17,30 @@
   No third-party limits · No per-message fees · Complete data ownership
 </p>
 
+<p align="center">
+  <img src="images/dashboard.png" alt="Beacon Dashboard" width="100%" />
+</p>
+
+<details>
+<summary><b>View more screenshots</b></summary>
+<br/>
+
+**Analytics**
+<p align="center">
+  <img src="images/analytics.png" alt="Analytics" width="100%" />
+</p>
+
+**Create Campaign**
+<p align="center">
+  <img src="images/create-campaign.png" alt="Create Campaign" width="100%" />
+</p>
+
+**Settings**
+<p align="center">
+  <img src="images/settings.png" alt="Settings" width="100%" />
+</p>
+</details>
+
 ---
 
 ## ✨ Features
