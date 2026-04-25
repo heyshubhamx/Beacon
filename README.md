@@ -96,6 +96,8 @@ VAPID keys are required for the Web Push protocol — they cryptographically ide
 npx web-push generate-vapid-keys
 ```
 
+> **Tip:** Alternatively, you can generate them online by searching Google for "generate vapid keys online" or using a site like [RandomKeygen](https://randomkeygen.com/vapid-key).
+
 This outputs something like:
 
 ```
