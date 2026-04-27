@@ -156,16 +156,23 @@ async function sendNotifications(subscriptionsArray, customPayload = null, campa
   let failedCount = 0;
   const timestamp = new Date().toISOString();
 
-  // Split subscriptions into chunks (e.g. 5000 per worker)
-  const chunkSize = config.push.batchSize || 1000;
+  // Split subscriptions into chunks for worker threads
+  const chunkSize = config.push.batchSize || 2500;
   const chunks = [];
   for (let i = 0; i < subscriptionsArray.length; i += chunkSize) {
     chunks.push(subscriptionsArray.slice(i, i + chunkSize));
   }
 
-  console.log(`Dispatching ${chunks.length} workers to process ${subscriptionsArray.length} subscriptions`);
+  // Cap max concurrent workers to prevent thread explosion
+  const maxConcurrentWorkers = config.push.maxConcurrentWorkers || 4;
+  const batchDelayMs = config.push.batchDelayMs || 500;
 
-  const workerPromises = chunks.map((chunk, index) => {
+  console.log(`Dispatching ${chunks.length} worker batches (max ${maxConcurrentWorkers} concurrent) to process ${subscriptionsArray.length} subscriptions`);
+
+  /**
+   * Spawn a single worker thread and return a promise for its results.
+   */
+  function spawnWorker(chunk, index) {
     return new Promise((resolve, reject) => {
       const workerPath = path.join(__dirname, '..', 'workers', 'push-sender.worker.js');
       const worker = new Worker(workerPath, {
@@ -195,10 +202,24 @@ async function sendNotifications(subscriptionsArray, customPayload = null, campa
         }
       });
     });
-  });
+  }
+
+  // Process worker chunks in waves of maxConcurrentWorkers with delay between waves
+  const allThreadResults = [];
+  for (let w = 0; w < chunks.length; w += maxConcurrentWorkers) {
+    const wave = chunks.slice(w, w + maxConcurrentWorkers);
+    const wavePromises = wave.map((chunk, idx) => spawnWorker(chunk, w + idx));
+    const waveResults = await Promise.allSettled(wavePromises);
+    allThreadResults.push(...waveResults);
+
+    // Add a small delay between waves to let the system breathe
+    if (w + maxConcurrentWorkers < chunks.length) {
+      await new Promise(r => setTimeout(r, batchDelayMs));
+    }
+  }
 
   try {
-    const threadResults = await Promise.allSettled(workerPromises);
+    const threadResults = allThreadResults;
     
     // Aggregate results and prepare bulk DB updates
     const failedEndpointsToUpdate = [];
@@ -376,46 +397,53 @@ async function cleanExpiredSubscriptions(websiteId) {
       },
     };
 
-    const results = await Promise.allSettled(
-      subscriptionsToCheck.map(async (subscription) => {
-        try {
-          // Parse keys if they're stringified (same as push-sender.worker.js)
-          let parsedKeys = subscription.keys;
-          let failsafe = 0;
-          while (typeof parsedKeys === 'string' && failsafe < 3) {
-            try { parsedKeys = JSON.parse(parsedKeys); } catch (e) { break; }
-            failsafe++;
-          }
-          const cleanSub = { endpoint: subscription.endpoint, keys: parsedKeys || {} };
+    // Process validation pushes in controlled batches to avoid network saturation
+    const CLEAN_BATCH_SIZE = 50;
+    const results = [];
+    for (let i = 0; i < subscriptionsToCheck.length; i += CLEAN_BATCH_SIZE) {
+      const batch = subscriptionsToCheck.slice(i, i + CLEAN_BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (subscription) => {
+          try {
+            // Parse keys if they're stringified (same as push-sender.worker.js)
+            let parsedKeys = subscription.keys;
+            let failsafe = 0;
+            while (typeof parsedKeys === 'string' && failsafe < 3) {
+              try { parsedKeys = JSON.parse(parsedKeys); } catch (e) { break; }
+              failsafe++;
+            }
+            const cleanSub = { endpoint: subscription.endpoint, keys: parsedKeys || {} };
 
-          // BUG-04 FIX: node-webpush uses generateRequest() + fetch(), NOT .notify()
-          const { endpoint, init } = webpush.generateRequest(
-            cleanSub, 
-            JSON.stringify(silentPayload), 
-            { TTL: 10 }
-          );
-          const res = await fetch(endpoint, init);
-          
-          if (res.ok) {
-            return { subscription, valid: true };
+            // BUG-04 FIX: node-webpush uses generateRequest() + fetch(), NOT .notify()
+            const { endpoint, init } = webpush.generateRequest(
+              cleanSub, 
+              JSON.stringify(silentPayload), 
+              { TTL: 10 }
+            );
+            const res = await fetch(endpoint, init);
+            
+            if (res.ok) {
+              return { subscription, valid: true };
+            }
+            
+            return {
+              subscription,
+              valid: false,
+              statusCode: res.status,
+              error: `HTTP ${res.status}`,
+            };
+          } catch (error) {
+            return {
+              subscription,
+              valid: false,
+              statusCode: 500,
+              error: error.message,
+            };
           }
-          
-          return {
-            subscription,
-            valid: false,
-            statusCode: res.status,
-            error: `HTTP ${res.status}`,
-          };
-        } catch (error) {
-          return {
-            subscription,
-            valid: false,
-            statusCode: 500,
-            error: error.message,
-          };
-        }
-      })
-    );
+        })
+      );
+      results.push(...batchResults);
+    }
 
     // Process results and remove invalid subscriptions
     let removed = 0;

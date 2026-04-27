@@ -84,7 +84,7 @@ function startWorker() {
     return result;
   }, {
     connection,
-    concurrency: 5, // Process 5 jobs simultaneously
+    concurrency: 2, // Process 2 jobs simultaneously (each job spawns worker threads internally)
   });
 
   worker.on('completed', (job, result) => {

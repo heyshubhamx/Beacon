@@ -71,7 +71,10 @@ async function processBatch() {
     expiredEndpoints: [],
   };
 
-  const promises = subscriptions.map(async (subscription) => {
+  /**
+   * Process a single subscription push notification.
+   */
+  async function processSingle(subscription) {
     const endpointId = subscription.endpoint.substr(subscription.endpoint.length - 8);
     
     // Ensure keys object is cleanly formatted and parsed (Supabase JSON/JSONB can sometimes return strings, or double-encoded strings)
@@ -136,10 +139,14 @@ async function processBatch() {
         error: err.message || 'Network Fetch Failure',
       });
     }
-  });
+  }
 
-  // Execute all concurrent fetch requests
-  await Promise.allSettled(promises);
+  // Process fetch requests in controlled batches to prevent network saturation
+  const CONCURRENCY = config.push?.workerConcurrency || 50;
+  for (let i = 0; i < subscriptions.length; i += CONCURRENCY) {
+    const batch = subscriptions.slice(i, i + CONCURRENCY);
+    await Promise.allSettled(batch.map(sub => processSingle(sub)));
+  }
   
   return results;
 }

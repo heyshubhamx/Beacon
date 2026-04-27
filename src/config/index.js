@@ -32,11 +32,13 @@ const config = {
 
   // Push sending
   push: {
-    batchSize: parseInt(process.env.PUSH_BATCH_SIZE, 10) || 100,
-    batchDelayMs: parseInt(process.env.PUSH_BATCH_DELAY_MS, 10) || 2000,
+    batchSize: parseInt(process.env.PUSH_BATCH_SIZE, 10) || 2500,
+    batchDelayMs: parseInt(process.env.PUSH_BATCH_DELAY_MS, 10) || 500,
     ttl: parseInt(process.env.PUSH_TTL, 10) || 10000,
     maxRetries: parseInt(process.env.PUSH_MAX_RETRIES, 10) || 3,
     retryBackoffMs: parseInt(process.env.PUSH_RETRY_BACKOFF_MS, 10) || 1000,
+    maxConcurrentWorkers: parseInt(process.env.PUSH_MAX_WORKERS, 10) || 4,
+    workerConcurrency: parseInt(process.env.PUSH_WORKER_CONCURRENCY, 10) || 50,
   },
 
   // Rate limiting
